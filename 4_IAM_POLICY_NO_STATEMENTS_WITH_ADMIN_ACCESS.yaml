@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ""
+Resources:
+  ConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "iam-policy-no-statements-with-admin-access"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::IAM::Policy"
+      Description: "A config rule that checks whether the default version of AWS Identity and Access Management (IAM) policies do not have administrator access. If any statement has 'Effect': 'Allow' with 'Action': '*' over 'Resource': '*', the rule is NON_COMPLIANT."
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "IAM_POLICY_NO_STATEMENTS_WITH_ADMIN_ACCESS"
+Parameters: {}
+Metadata: {}
+Conditions: {}
