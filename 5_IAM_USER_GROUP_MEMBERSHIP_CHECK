@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ""
+Resources:
+  ConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "iam-user-group-membership-check"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::IAM::User"
+      Description: "A Config rule that checks whether IAM users are members of at least one IAM group."
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "IAM_USER_GROUP_MEMBERSHIP_CHECK"
+Parameters: {}
+Metadata: {}
+Conditions: {}
