@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ''
+Resources:
+  ConfigRule:
+    Type: 'AWS::Config::ConfigRule'
+    Properties:
+      ConfigRuleName: iam-no-inline-policy-check
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::IAM::Role'
+          - 'AWS::IAM::User'
+          - 'AWS::IAM::Group'
+      Description: >-
+        A config rule that checks that inline policy feature is not in use. The
+        rule is NON_COMPLIANT if an AWS Identity and Access Management (IAM)
+        user, IAM role or IAM group has any inline policy.
+      Source:
+        Owner: AWS
+        SourceIdentifier: IAM_NO_INLINE_POLICY_CHECK
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 39d69ecc-f02a-436e-8736-cbb94fcee8ad
+Parameters: {}
+Metadata:
+  'AWS::CloudFormation::Designer':
+    39d69ecc-f02a-436e-8736-cbb94fcee8ad:
+      size:
+        width: 60
+        height: 60
+      position:
+        x: 180
+        'y': 90
+      z: 1
+      embeds: []
+Conditions: {}
