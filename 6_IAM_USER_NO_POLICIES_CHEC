@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ""
+Resources:
+  ConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "iam-user-no-policies-check"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::IAM::User"
+      Description: "A Config rule that checks that none of your IAM users have policies attached. IAM users must inherit permissions from IAM groups or roles."
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "IAM_USER_NO_POLICIES_CHECK"
+Parameters: {}
+Metadata: {}
+Conditions: {}
