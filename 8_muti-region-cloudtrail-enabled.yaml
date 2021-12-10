@@ -1,0 +1,361 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ""
+Resources:
+  S3SharedBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      LoggingConfiguration: {}
+      AccessControl: "LogDeliveryWrite"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket:
+        Ref: "S3SharedBucket"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Principal:
+              Service:
+                - "cloudtrail.amazonaws.com"
+                - "config.amazonaws.com"
+            Action:
+              - "s3:GetBucketAcl"
+            Resource:
+              - Fn::GetAtt:
+                  - "S3SharedBucket"
+                  - "Arn"
+            Effect: "Allow"
+            Condition: {}
+          - Principal:
+              Service:
+                - "cloudtrail.amazonaws.com"
+                - "config.amazonaws.com"
+            Action:
+              - "s3:PutObject"
+            Resource:
+              - Fn::Join:
+                  - ""
+                  -
+                    - ""
+                    - Fn::GetAtt:
+                        - "S3SharedBucket"
+                        - "Arn"
+               
+                    - "/*"
+            Effect: "Allow"
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: "bucket-owner-full-control"
+    DependsOn: "S3SharedBucket"
+  CloudTrail:
+    Type: "AWS::CloudTrail::Trail"
+    Properties:
+      TrailName: "ManagementEventsTrail"
+      IsLogging: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        - IncludeManagementEvents: true
+          ReadWriteType: "All"
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      S3BucketName:
+        Ref: "S3SharedBucket"
+      CloudWatchLogsLogGroupArn:
+        Fn::GetAtt:
+          - "CWLogGroupForCloudTrail"
+          - "Arn"
+      CloudWatchLogsRoleArn:
+        Fn::GetAtt:
+          - "IamRoleForCwLogsCloudTrail"
+          - "Arn"
+    DependsOn:
+      - "BucketPolicy"
+  IamRoleForCwLogsCloudTrail:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ""
+            Effect: "Allow"
+            Principal:
+              Service: "cloudtrail.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "allow-access-to-cw-logs"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+  CWLogGroupForCloudTrail:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: "CloudTrailLogs"
+      RetentionInDays: 90
+  ConfigurationRecorder:
+    Type: "AWS::Config::ConfigurationRecorder"
+    Properties:
+      RoleARN:
+        Fn::GetAtt:
+          - "IamRoleForAwsConfig"
+          - "Arn"
+      RecordingGroup:
+        AllSupported: true
+        IncludeGlobalResourceTypes: true
+  DeliveryChannel:
+    Type: "AWS::Config::DeliveryChannel"
+    Properties:
+      S3BucketName:
+        Ref: "S3SharedBucket"
+  IamRoleForAwsConfig:
+    Type: "AWS::IAM::Role"
+    Properties:
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSConfigRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ""
+            Effect: "Allow"
+            Principal:
+              Service: "config.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "allow-access-to-config-s3-bucket"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - Fn::Join:
+                      - ""
+                      -
+                        - Fn::GetAtt:
+                            - "S3SharedBucket"
+                            - "Arn"
+                        - "/*"
+                Condition:
+                  StringLike:
+                    s3:x-amz-acl: "bucket-owner-full-control"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetBucketAcl"
+                Resource:
+                  Fn::GetAtt:
+                    - "S3SharedBucket"
+                    - "Arn"
+      RoleName: "iamRoleForAWSConfig"
+  SnsTopic1:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      Subscription:
+        - Endpoint: "email@example.com"
+          Protocol: "email"
+      TopicName: "sns-topic"
+  ConfigRule1:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "root-account-mfa-enabled"
+      Scope:
+        ComplianceResourceTypes: []
+      Description: "A Config rule that checks whether users of your AWS account require a multi-factor authentication (MFA) device to sign in with root credentials."
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "ROOT_ACCOUNT_MFA_ENABLED"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+    DependsOn:
+      - "ConfigurationRecorder"
+  ConfigRule3:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "iam-root-access-key-check"
+      Scope:
+        ComplianceResourceTypes: []
+      Description: "A config rule that checks whether the root user access key is available. The rule is COMPLIANT if the user access key does not exist."
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "IAM_ROOT_ACCESS_KEY_CHECK"
+        MaximumExecutionFrequency: "TwentyFour_Hours"
+      DependsOn:
+      - "ConfigurationRecorder"
+  ConfigRule4:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "iam-password-policy"
+      Scope:
+        ComplianceResourceTypes: []
+      Description: "A Config rule that checks whether the account password policy for IAM users meets the specified requirements."
+      InputParameters:
+        RequireUppercaseCharacters: "true"
+        RequireLowercaseCharacters: "true"
+        RequireSymbols: "true"
+        RequireNumbers: "true"
+        MinimumPasswordLength: "14"
+        PasswordReusePrevention: "24"
+        MaxPasswordAge: "90"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "IAM_PASSWORD_POLICY"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+    DependsOn:
+      - "ConfigurationRecorder"
+  ConfigRule5:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "mfa-enabled-for-iam-console-access"
+      Scope:
+        ComplianceResourceTypes: []
+      Description: "A Config rule that checks whether AWS Multi-Factor Authentication (MFA) is enabled for all AWS Identity and Access Management (IAM) users that use a console password. The rule is COMPLIANT if MFA is enabled."
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "MFA_ENABLED_FOR_IAM_CONSOLE_ACCESS"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+    DependsOn:
+      - "ConfigurationRecorder"
+  ConfigRule7:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "access-keys-rotated"
+      Scope:
+        ComplianceResourceTypes: []
+      Description: "A config rule that checks whether the active access keys are rotated within the number of days specified in maxAccessKeyAge. The rule is NON_COMPLIANT if the access keys have not been rotated for more than maxAccessKeyAge number of days."
+      InputParameters:
+        maxAccessKeyAge: "90"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "ACCESS_KEYS_ROTATED"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+    DependsOn:
+      - "ConfigurationRecorder"
+  ConfigRule8:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "iam-user-unused-credentials-check"
+      Scope:
+        ComplianceResourceTypes: []
+      Description: "A config rule that checks whether your AWS Identity and Access Management (IAM) users have passwords or active access keys that have not been used within the specified number of days you provided. Re-evaluating this rule within 4 hours of the first eva..."
+      InputParameters:
+        maxCredentialUsageAge: "90"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "IAM_USER_UNUSED_CREDENTIALS_CHECK"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+    DependsOn:
+      - "ConfigurationRecorder"
+  CwAlarm2:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmName: "iam_user_changes"
+      AlarmDescription: "A CloudWatch Alarm that triggers when changes are made to IAM users. Events include IAM user creation/deletion/update operations, updating IAM user passwords or Access Keys, as well as attaching/detaching policies from IAM users or groups."
+      MetricName: "IAMPolicyEventCount"
+      Namespace: "CloudTrailMetrics"
+      Statistic: "Sum"
+      Period: "300"
+      EvaluationPeriods: "1"
+      Threshold: "1"
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      AlarmActions:
+        - Ref: "SnsTopic1"
+      TreatMissingData: "notBreaching"
+  MetricFilter2:
+    Type: "AWS::Logs::MetricFilter"
+    Properties:
+      LogGroupName:
+        Ref: "CWLogGroupForCloudTrail"
+      FilterPattern: "{($.eventName=AddUserToGroup)||($.eventName=ChangePassword)||($.eventName=CreateAccessKey)||($.eventName=CreateUser)||($.eventName=UpdateAccessKey)||($.eventName=UpdateGroup)||($.eventName=UpdateUser)||($.eventName=AttachGroupPolicy)||($.eventName=AttachUserPolicy)||($.eventName=DeleteUserPolicy)||($.eventName=DetachGroupPolicy)||($.eventName=DetachUserPolicy)||($.eventName=PutUserPolicy)}"
+      MetricTransformations:
+        - MetricValue: "1"
+          MetricNamespace: "CloudTrailMetrics"
+          MetricName: "IAMPolicyEventCount"
+  CwAlarm3:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmName: "iam_mfa_changes"
+      AlarmDescription: "A CloudWatch Alarm that triggers when changes are made to IAM MFA devices (Virtual or Hardware). Events include enabling/disabling/updating MFA virtual and hardware devices in an AWS account."
+      MetricName: "IAMPolicyEventCount"
+      Namespace: "CloudTrailMetrics"
+      Statistic: "Sum"
+      Period: "300"
+      EvaluationPeriods: "1"
+      Threshold: "1"
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      AlarmActions:
+        - Ref: "SnsTopic1"
+      TreatMissingData: "notBreaching"
+  MetricFilter3:
+    Type: "AWS::Logs::MetricFilter"
+    Properties:
+      LogGroupName:
+        Ref: "CWLogGroupForCloudTrail"
+      FilterPattern: "{($.eventName=CreateVirtualMFADevice)||($.eventName=DeactivateMFADevice)||($.eventName=DeleteVirtualMFADevice)||($.eventName=EnableMFADevice)||($.eventName=ResyncMFADevice)}"
+      MetricTransformations:
+        - MetricValue: "1"
+          MetricNamespace: "CloudTrailMetrics"
+          MetricName: "IAMPolicyEventCount"
+  CwEvent1:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Name: "detect-config-rule-compliance-changes"
+      Description: "A CloudWatch Event Rule that detects changes to AWS Config Rule compliance status and publishes change events to an SNS topic for notification."
+      State: "ENABLED"
+      Targets:
+        - Arn:
+            Ref: "SnsTopic1"
+          Id: "target-id1"
+      EventPattern:
+        detail-type:
+          - "Config Rules Compliance Change"
+        source:
+          - "aws.config"
+  SnsTopicPolicyCwEvent1:
+    Type: "AWS::SNS::TopicPolicy"
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Sid: "__default_statement_ID"
+            Effect: "Allow"
+            Principal:
+              AWS: "*"
+            Action:
+              - "SNS:GetTopicAttributes"
+              - "SNS:SetTopicAttributes"
+              - "SNS:AddPermission"
+              - "SNS:RemovePermission"
+              - "SNS:DeleteTopic"
+              - "SNS:Subscribe"
+              - "SNS:ListSubscriptionsByTopic"
+              - "SNS:Publish"
+              - "SNS:Receive"
+            Resource:
+              Ref: "SnsTopic1"
+            Condition:
+              StringEquals:
+                AWS:SourceOwner:
+                  Ref: "AWS::AccountId"
+          - Sid: "TrustCWEToPublishEventsToMyTopic"
+            Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sns:Publish"
+            Resource:
+              Ref: "SnsTopic1"
+      Topics:
+        - Ref: "SnsTopic1"
+Parameters: {}
+Metadata: {}
+Conditions: {}
